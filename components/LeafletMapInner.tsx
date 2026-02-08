@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
+  CircleMarker,
   Marker,
   Popup,
-  CircleMarker,
   Polygon,
   useMap,
   useMapEvents,
@@ -34,21 +34,25 @@ type StartPoint = { label: string; point: LatLon };
 type Props = {
   center: LatLngExpression;
   zoom: number;
+
   onMapClick: (lat: number, lon: number) => void;
   onMapReady: (map: LeafletMap) => void;
   onViewChanged: (map: LeafletMap) => void;
 
+  // User location
   showUserLocation: boolean;
   followUser: boolean;
   locateToken: number;
   centerOnMeToken: number;
   onUserLocation?: (lat: number, lon: number) => void;
 
+  // Envelope + guidance
   showEnvelope: boolean;
   envelopeNow: EnvelopePolys | null;
   envelopeBands: Band[] | null;
   startPoints?: StartPoint[] | null;
 
+  // Markers
   traps: Trap[];
   lkps: LKP[];
   activeLkpId: string | null;
@@ -76,6 +80,20 @@ function MapEvents({
       onViewChanged(map);
     },
   });
+
+  return null;
+}
+
+function MapReady({ onMapReady }: { onMapReady: (map: LeafletMap) => void }) {
+  const map = useMap();
+  const didInit = useRef(false);
+
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    onMapReady(map);
+  }, [map, onMapReady]);
+
   return null;
 }
 
@@ -134,14 +152,12 @@ function UserLocator({
       setPos({ lat, lon });
       onUserLocation?.(lat, lon);
 
-      // one-time recenter only when token changes
       if (centerOnMeToken !== lastCenterTokenRef.current) {
         lastCenterTokenRef.current = centerOnMeToken;
         map.setView([lat, lon], map.getZoom(), { animate: true });
         return;
       }
 
-      // follow only if enabled AND user isn't actively interacting
       if (followUser && !isInteractingRef.current) {
         map.setView([lat, lon], map.getZoom(), { animate: true });
       }
@@ -172,7 +188,9 @@ export default function LeafletMapInner(props: Props) {
   const attrib =
     '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-  const icon = useMemo(() => {
+  const activeId = props.activeLkpId;
+
+  const defaultIcon = useMemo(() => {
     return L.icon({
       iconUrl:
         "data:image/svg+xml;charset=UTF-8," +
@@ -189,14 +207,10 @@ export default function LeafletMapInner(props: Props) {
       center={props.center}
       zoom={props.zoom}
       style={{ width: "100%", height: "100%" }}
-      whenReady={() => {
-        // react-leaflet expects () => void
-      }}
-      ref={(instance) => {
-        if (instance) props.onMapReady(instance as unknown as LeafletMap);
-      }}
     >
       <TileLayer url={tileUrl} attribution={attrib} />
+
+      <MapReady onMapReady={props.onMapReady} />
 
       <MapEvents onMapClick={props.onMapClick} onViewChanged={props.onViewChanged} />
 
@@ -208,27 +222,24 @@ export default function LeafletMapInner(props: Props) {
         onUserLocation={props.onUserLocation}
       />
 
-      {/* LKPs */}
       {props.lkps.map((k) => (
-        <Marker key={k.id} position={[k.lat, k.lon]} icon={icon}>
+        <Marker key={k.id} position={[k.lat, k.lon]} icon={defaultIcon}>
           <Popup>
             <b>{k.label ?? "LKP"}</b>
-            <div style={{ fontSize: 12, opacity: 0.85 }}>{new Date(k.timeISO).toLocaleString()}</div>
-            {props.activeLkpId === k.id ? <div style={{ marginTop: 6 }}>(active)</div> : null}
+            <div style={{ fontSize: 12, opacity: 0.8 }}>{new Date(k.timeISO).toLocaleString()}</div>
+            {activeId === k.id && <div style={{ marginTop: 6 }}>(active)</div>}
           </Popup>
         </Marker>
       ))}
 
-      {/* Traps */}
       {props.traps.map((t) => (
-        <Marker key={t.id} position={[t.lat, t.lon]} icon={icon}>
+        <Marker key={t.id} position={[t.lat, t.lon]} icon={defaultIcon}>
           <Popup>
             <b>Trap:</b> {t.label}
           </Popup>
         </Marker>
       ))}
 
-      {/* Envelope now */}
       {props.showEnvelope && props.envelopeNow && (
         <>
           <Polygon positions={polyToTuples(props.envelopeNow.residual)} pathOptions={{}} />
@@ -237,16 +248,14 @@ export default function LeafletMapInner(props: Props) {
         </>
       )}
 
-      {/* Bands (residual outlines) */}
       {props.showEnvelope &&
         props.envelopeBands &&
         props.envelopeBands.map((b) => (
           <Polygon key={b.minutes} positions={polyToTuples(b.polygons.residual)} pathOptions={{}} />
         ))}
 
-      {/* Start points */}
       {props.startPoints?.map((p, idx) => (
-        <Marker key={`${p.label}_${idx}`} position={[p.point.lat, p.point.lon]} icon={icon}>
+        <Marker key={`${p.label}_${idx}`} position={[p.point.lat, p.point.lon]} icon={defaultIcon}>
           <Popup>{p.label}</Popup>
         </Marker>
       ))}

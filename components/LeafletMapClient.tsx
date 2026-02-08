@@ -1,3 +1,2 @@
-import React from "react";
-import LeafletMapInner from "./LeafletMapInner";
-export default LeafletMapInner;
+"use client";
+export { default } from "./LeafletMapInner";
